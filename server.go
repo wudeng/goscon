@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ejoy/goscon/scp"
+	"./scp"
 	"io"
 )
 

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ejoy/goscon/dh64"
+	"../dh64"
 )
 
 type cipherConnReader struct {

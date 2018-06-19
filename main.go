@@ -18,7 +18,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/ejoy/goscon/scp"
+	"./scp"
 )
 
 var errNoHost = errors.New("no host")
@@ -148,6 +148,7 @@ func (tp *LocalConnProvider) Reload() error {
 	var config Config
 	dec := json.NewDecoder(fp)
 	err = dec.Decode(&config)
+	Log("config: %v", config.Hosts)
 	if err != nil {
 		return err
 	}

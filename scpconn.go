@@ -160,13 +160,17 @@ func (s *SCPConn) Close() error {
 }
 
 func (s *SCPConn) closeWrite() error {
-	tcpConn := s.Conn.RawConn().(*net.TCPConn)
-	return tcpConn.CloseWrite()
+	if tcpConn, ok := s.Conn.RawConn().(*net.TCPConn); ok {
+		return tcpConn.CloseWrite()
+	}
+	return s.Conn.Close()
 }
 
 func (s *SCPConn) closeRead() error {
-	tcpConn := s.Conn.RawConn().(*net.TCPConn)
-	return tcpConn.CloseRead()
+	if tcpConn, ok := s.Conn.RawConn().(*net.TCPConn); ok {
+		return tcpConn.CloseRead()
+	}
+	return s.Conn.Close()
 }
 
 func (s *SCPConn) CloseRead() error {

@@ -7,8 +7,7 @@ import (
 
 	"io"
 
-	"./scp"
-	kcp "github.com/xtaci/kcp-go"
+	"github.com/ejoy/goscon/scp"
 )
 
 var ReuseTimeout = 300 * time.Second
@@ -127,8 +126,7 @@ func (p *ConnPair) Pump() {
 }
 
 type SCPServer struct {
-	network      string
-	laddr        string
+	options      *Options
 	reuseTimeout time.Duration
 	idAllocator  *scp.IDAllocator
 
@@ -221,9 +219,9 @@ func (ss *SCPServer) onNewConn(scon *scp.Conn) {
 	connPair.Pump()
 }
 
-func (ss *SCPServer) handleClient(conn *net.TCPConn) {
+func (ss *SCPServer) handleClient(c Conn) {
 	defer Recover()
-
+	conn := c.GetConn()
 	scon := scp.Server(conn, &scp.Config{ScpServer: ss})
 	if err := scon.Handshake(); err != nil {
 		Error("handshake error [%s]: %s", conn.RemoteAddr().String(), err.Error())
@@ -231,9 +229,7 @@ func (ss *SCPServer) handleClient(conn *net.TCPConn) {
 		return
 	}
 
-	conn.SetKeepAlive(true)
-	conn.SetKeepAlivePeriod(time.Second * 60)
-	conn.SetLinger(0)
+	c.SetOptions(ss.options)
 
 	if scon.IsReused() {
 		ss.onReusedConn(scon)
@@ -242,40 +238,19 @@ func (ss *SCPServer) handleClient(conn *net.TCPConn) {
 	}
 }
 
-func (ss *SCPServer) handleKCPClient(conn net.Conn) {
-	defer Recover()
-
-	scon := scp.Server(conn, &scp.Config{ScpServer: ss})
-	if err := scon.Handshake(); err != nil {
-		Error("handshake error [%s]: %s", conn.RemoteAddr().String(), err.Error())
-		conn.Close()
-		return
-	}
-
-	if scon.IsReused() {
-		ss.onReusedConn(scon)
-	} else {
-		ss.onNewConn(scon)
-	}
-}
-
-func (ss *SCPServer) StartTCP() error {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", ss.laddr)
+// Start process connections
+func (ss *SCPServer) Start(network, laddr string) error {
+	ln, err := ListenWithOptions(network, laddr, ss.options)
 	if err != nil {
 		return err
 	}
 
-	ln, err := net.ListenTCP("tcp", tcpAddr)
-	if err != nil {
-		return err
-	}
-
-	Info("scpServer listen: %s", tcpAddr.String())
+	Info("scpServer listen: %s: %s", network, laddr)
 
 	var tempDelay time.Duration // how long to sleep on accept failure
 
 	for {
-		conn, err := ln.AcceptTCP()
+		conn, err := ln.Accept()
 		if err != nil {
 			if opErr, ok := err.(*net.OpError); ok && opErr.Temporary() {
 				if tempDelay == 0 {
@@ -298,44 +273,10 @@ func (ss *SCPServer) StartTCP() error {
 	}
 }
 
-// StartKCP start listen for kcp connections
-func (ss *SCPServer) StartKCP(fecData, fecParity int) error {
-	ln, err := kcp.ListenWithOptions(ss.laddr, nil, fecData, fecParity)
-
-	if err != nil {
-		return err
-	}
-
-	var tempDelay time.Duration // how long to sleep on accept failure
-
-	for {
-		conn, err := ln.AcceptKCP()
-		if err != nil {
-			if opErr, ok := err.(*net.OpError); ok && opErr.Temporary() {
-				if tempDelay == 0 {
-					tempDelay = 5 * time.Millisecond
-				} else {
-					tempDelay *= 2
-				}
-				if max := 1 * time.Second; tempDelay > max {
-					tempDelay = max
-				}
-				Error("accept error: %v; retrying in %v", err, tempDelay)
-				time.Sleep(tempDelay)
-				continue
-			}
-			Error("accept failed:%s", err.Error())
-			return err
-		}
-		go ss.handleKCPClient(conn)
-	}
-}
-
-func NewSCPServer(network, laddr string, reuseTimeout int) *SCPServer {
+func NewSCPServer(options *Options) *SCPServer {
 	return &SCPServer{
-		network:      network,
-		laddr:        laddr,
-		reuseTimeout: time.Duration(reuseTimeout) * time.Second,
+		options:      options,
+		reuseTimeout: time.Duration(options.timeout) * time.Second,
 		idAllocator:  scp.NewIDAllocator(1),
 		connPairs:    make(map[int]*ConnPair),
 	}

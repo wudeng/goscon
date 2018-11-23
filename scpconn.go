@@ -2,11 +2,10 @@ package main
 
 import (
 	"errors"
-	"net"
 	"sync"
 	"time"
 
-	"./scp"
+	"github.com/ejoy/goscon/scp"
 )
 
 var errConnClosed = errors.New("conn closed")
@@ -23,6 +22,14 @@ type SCPConn struct {
 
 	reuseCh      chan struct{}
 	reuseTimeout time.Duration
+}
+
+type closeWriter interface {
+	CloseWrite() error
+}
+
+type closeReader interface {
+	CloseRead() error
 }
 
 func (s *SCPConn) setErrorWithLocked(err error) {
@@ -160,14 +167,14 @@ func (s *SCPConn) Close() error {
 }
 
 func (s *SCPConn) closeWrite() error {
-	if tcpConn, ok := s.Conn.RawConn().(*net.TCPConn); ok {
+	if tcpConn, ok := s.Conn.RawConn().(closeWriter); ok {
 		return tcpConn.CloseWrite()
 	}
 	return s.Conn.Close()
 }
 
 func (s *SCPConn) closeRead() error {
-	if tcpConn, ok := s.Conn.RawConn().(*net.TCPConn); ok {
+	if tcpConn, ok := s.Conn.RawConn().(closeReader); ok {
 		return tcpConn.CloseRead()
 	}
 	return s.Conn.Close()

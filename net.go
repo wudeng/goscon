@@ -26,14 +26,7 @@ type (
 	}
 
 	KcpOptions struct {
-		mtu         int
 		readTimeout int
-		sndWnd      int
-		rcvWnd      int
-		nodelay     int
-		interval    int
-		resend      int
-		nc          int // flow control
 		fecData     int
 		fecParity   int
 		readBuffer  int
@@ -94,7 +87,7 @@ func (conn kcpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	return n, err
 }
 
-func kcpListenWithOptions(laddr string, block kcp.BlockCrypt, mtu, dataShards, parityShards int) (*kcp.Listener, error) {
+func kcpListenWithOptions(laddr string, block kcp.BlockCrypt, dataShards, parityShards int) (*kcp.Listener, error) {
 	conn, err := reuse.ListenPacket("udp", laddr)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -105,7 +98,7 @@ func kcpListenWithOptions(laddr string, block kcp.BlockCrypt, mtu, dataShards, p
 	}
 	kcpconn := kcpPacketConn{conn, fecHeaderSize}
 
-	return kcp.ServeConn(block, mtu, dataShards, parityShards, kcpconn)
+	return kcp.ServeConn(block, dataShards, parityShards, kcpconn)
 }
 
 func ListenWithOptions(network, laddr string, options *Options) (Listener, error) {
@@ -126,7 +119,7 @@ func ListenWithOptions(network, laddr string, options *Options) (Listener, error
 	// kcp
 	kcpOptions := options.kcpOptions
 
-	ln, err := kcpListenWithOptions(laddr, nil, kcpOptions.mtu, kcpOptions.fecData, kcpOptions.fecParity)
+	ln, err := kcpListenWithOptions(laddr, nil, kcpOptions.fecData, kcpOptions.fecParity)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +164,8 @@ func (k *kcpConn) Read(b []byte) (n int, err error) {
 }
 
 func (k *kcpConn) SetOptions(options *Options) {
-	kcpOptions := options.kcpOptions
-	k.SetWindowSize(kcpOptions.sndWnd, kcpOptions.rcvWnd)
-	k.SetNoDelay(kcpOptions.nodelay, kcpOptions.interval, kcpOptions.resend, kcpOptions.nc)
+	kcp := glbLocalConnProvider.kcp
+	k.SetMtu(kcp.Mtu)
+	k.SetWindowSize(kcp.SndWnd, kcp.RcvWnd)
+	k.SetNoDelay(kcp.Nodelay, kcp.Interval, kcp.Resend, kcp.Nc)
 }

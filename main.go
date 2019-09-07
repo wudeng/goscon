@@ -10,7 +10,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"time"
 	"math/rand"
 	"net"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/ejoy/kcp-go"
 
@@ -42,8 +42,19 @@ type Host struct {
 	addr *net.TCPAddr
 }
 
+type KcpConfig struct {
+	Mtu      int `json:"mtu"`
+	Interval int `json:"interval"`
+	SndWnd   int `json:"snd_wnd"`
+	RcvWnd   int `json:"rcv_wnd"`
+	Nodelay  int `json:"nodelay"`
+	Resend   int `json:"resend"`
+	Nc       int `json:"nc"`
+}
+
 type Config struct {
-	Hosts []Host `json:"hosts"`
+	Hosts []Host    `json:"hosts"`
+	Kcp   KcpConfig `json:"kcp"`
 }
 
 type LocalConnWrapper interface {
@@ -54,6 +65,8 @@ type LocalConnProvider struct {
 	sync.Mutex
 	hosts  []Host
 	weight int
+
+	kcp KcpConfig
 
 	wrapper LocalConnWrapper
 
@@ -120,7 +133,7 @@ func (tp *LocalConnProvider) CreateLocalConn(remoteConn *scp.Conn) (*net.TCPConn
 	return newConn, nil
 }
 
-func (tp *LocalConnProvider) reset(hosts []Host) error {
+func (tp *LocalConnProvider) reset(hosts []Host, kcp KcpConfig) error {
 	var weight int
 	for i := range hosts {
 		host := &hosts[i]
@@ -139,7 +152,10 @@ func (tp *LocalConnProvider) reset(hosts []Host) error {
 	tp.Lock()
 	tp.hosts = hosts
 	tp.weight = weight
+	tp.kcp = kcp
 	tp.Unlock()
+
+	Log("%+v", kcp)
 	return nil
 }
 
@@ -157,7 +173,7 @@ func (tp *LocalConnProvider) Reload() error {
 		return err
 	}
 
-	return tp.reset(config.Hosts)
+	return tp.reset(config.Hosts, config.Kcp)
 }
 
 const SIG_RELOAD = syscall.Signal(34)
@@ -251,14 +267,7 @@ func (flag *KcpOptions) String() string {
 func (flag *KcpOptions) Set(value string) error {
 	optProtocol |= KCP
 	// default vals
-	flag.mtu = 1400
 	flag.readTimeout = 60
-	flag.sndWnd = 1024
-	flag.rcvWnd = 1024
-	flag.nodelay = 1
-	flag.interval = 10
-	flag.resend = 2
-	flag.nc = 1
 	flag.fecData = 0
 	flag.fecParity = 0
 	flag.readBuffer = 4 * 1024 * 1024
@@ -267,54 +276,12 @@ func (flag *KcpOptions) Set(value string) error {
 	for _, pair := range strings.Split(value, ",") {
 		option := strings.Split(pair, ":")
 		switch option[0] {
-		case "mtu":
-			data, err := strconv.Atoi(option[1])
-			if err != nil {
-				return err
-			}
-			flag.mtu = data
 		case "read_timeout":
 			data, err := strconv.Atoi(option[1])
 			if err != nil {
 				return err
 			}
 			flag.readTimeout = data
-		case "snd_wnd":
-			data, err := strconv.Atoi(option[1])
-			if err != nil {
-				return err
-			}
-			flag.sndWnd = data
-		case "rcv_wnd":
-			data, err := strconv.Atoi(option[1])
-			if err != nil {
-				return err
-			}
-			flag.rcvWnd = data
-		case "nodelay":
-			data, err := strconv.Atoi(option[1])
-			if err != nil {
-				return err
-			}
-			flag.nodelay = data
-		case "interval":
-			data, err := strconv.Atoi(option[1])
-			if err != nil {
-				return err
-			}
-			flag.interval = data
-		case "resend":
-			data, err := strconv.Atoi(option[1])
-			if err != nil {
-				return err
-			}
-			flag.resend = data
-		case "nc":
-			data, err := strconv.Atoi(option[1])
-			if err != nil {
-				return err
-			}
-			flag.nc = data
 		case "fec_data":
 			data, err := strconv.Atoi(option[1])
 			if err != nil {
